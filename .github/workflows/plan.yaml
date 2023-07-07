@@ -1,0 +1,57 @@
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform_plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses:  actions/checkout@v3
+        with:
+          token: ${{ secrets.GH_ACTIONS_PAT }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "sumup-data-platform-bot"
+          git config --global user.email "data-platform@sumup.com"
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.5.0
+        with:
+          ssh-private-key: ${{ secrets.ACTIONS_SSH_AGENT_KEY }}
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-region: eu-west-1
+          aws-access-key-id: ${{ secrets.GLOBAL_DATAPLATFORM_SEC_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.GLOBAL_DATAPLATFORM_SEC_AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::497651795874:role/OrganizationAccountAccessRole
+          role-duration-seconds: 3600
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Terraform Format # FIXME need to discuss this with the team as this isn't commited
+        id: fmt
+        run: terraform fmt
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -refresh=false -no-color -parallelism=1
+    env:
+      TF_VAR_SNOWFLAKE_USERNAME: ${{ secrets.GLOBAL_DATAPLATFORM_SNOWFLAKE_USERNAME }}
+      TF_VAR_SNOWFLAKE_ACCOUNT: ${{ secrets.GLOBAL_DATAPLATFORM_SNOWFLAKE_ACCOUNT }}
+      TF_VAR_SNOWFLAKE_ROLE: ${{ secrets.GLOBAL_DATAPLATFORM_SNOWFLAKE_ROLE }}
+      SNOWFLAKE_KEY: ${{ secrets.GLOBAL_DATAPLATFORM_SNOWFLAKE_PRIVATE_KEY }}
+      run: |
+        mkdir /tmp/config
+        echo -n $SNOWFLAKE_KEY | base64 --decode > /tmp/config/pk.p8
+        export TF_VAR_SNOWFLAKE_PRIVATE_KEY_PATH=/tmp/config/pk.p8
+        chmod +x /tmp/config/pk.p8
